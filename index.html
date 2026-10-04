@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="theme-color" content="#120a1a">
+		<title>Graveyard Smash 3D</title>
+		<!-- Graveyard Smash 3D web shell (web/shell.html, the Web preset's custom_html_shell).
+		     The game's moonlit palette (data/main/edition.json "palette"): loading, the
+		     turn-sideways card and the first frame read as one thing, in the Scareathon
+		     arcade iframe or alone. One page, two packs: phones load index.mobile.pck,
+		     desktops index.pck (tools/web_build.py fills in GS_MOBILE_PCK_SIZE). The
+		     loading screen is the moon over the graveyard's night sky with the game's
+		     name, and it stays up until the game says the title has drawn
+		     (window.gsGameShown, core/arcade.gd): never black. -->
+		<style>
+html, body, #canvas { margin: 0; padding: 0; border: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+	background: #120a1a;
+	color: #fff2d0;
+	overflow: hidden;
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	overscroll-behavior: none;
+	font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+}
+#canvas { display: block; touch-action: none; }
+#canvas:focus { outline: none; }
+.cover {
+	position: absolute; inset: 0;
+	display: flex; flex-direction: column; justify-content: center; align-items: center;
+	gap: 0.7rem; text-align: center; padding: 1rem; box-sizing: border-box;
+	background: radial-gradient(circle at 50% 16%, #e8e4c9 0, #e8e4c9 2.2rem, rgba(232, 228, 201, 0.35) 2.5rem, #3a2846 7rem, #2a1830 14rem, #120a1a 75%);
+}
+#status { visibility: hidden; z-index: 4; transition: opacity 0.45s ease-out; }
+#status, #lost {
+	background:
+		linear-gradient(180deg, rgba(18, 10, 26, 0) 60%, #07040a 100%),
+		radial-gradient(circle at 50% 16%, #e8e4c9 0, #e8e4c9 2.2rem, rgba(232, 228, 201, 0.35) 2.5rem, #3a2846 7rem, #2a1830 14rem, #120a1a 75%);
+}
+#status.leaving { opacity: 0; pointer-events: none; }
+#status > * { transition: opacity 0.15s ease-out; }
+#status.leaving > * { opacity: 0; }  /* the words go first: the title paints its own logo */
+#status-title, .status-title {
+	font-family: 'Avenir Next Heavy', 'Avenir Next', 'Arial Black', system-ui, sans-serif;
+	font-weight: 900; font-size: clamp(1.9rem, min(9vw, 13vh), 4.2rem); line-height: 0.95; letter-spacing: 0.02em;
+	color: #ffd36e; text-transform: uppercase;
+	text-shadow: 0 3px 0 #b8380c, 0 8px 18px rgba(0, 0, 0, 0.8);
+}
+#status-title small, .status-title small { display: block; font-size: 0.45em; letter-spacing: 0.3em; color: #e8e4c9; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9); }
+#status-tag { color: #b8a8b8; font-size: clamp(0.85rem, 3.4vw, 1.05rem); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
+#status-bar {
+	width: min(60vw, 320px); height: 10px; margin-top: 0.3rem;
+	border-radius: 999px; background: rgba(0, 0, 0, 0.45); overflow: hidden;
+	box-shadow: 0 0 0 2px rgba(255, 211, 110, 0.25);
+	display: none;
+}
+#status-fill {
+	height: 100%; width: 0%;
+	background: linear-gradient(90deg, #b8380c, #ffd36e);
+	border-radius: 999px;
+	transition: width 0.2s ease-out;
+}
+#status-fill.indeterminate { width: 35%; animation: slide 1.2s ease-in-out infinite alternate; }
+@keyframes slide { from { margin-left: 0%; } to { margin-left: 65%; } }
+#status-notice {
+	display: none;
+	background: #fff2d0; color: #2a1830;
+	border-radius: 14px; line-height: 1.45;
+	max-width: 30rem; padding: 1rem 1.25rem;
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+#status-splash { display: none; }
+#lost { display: none; z-index: 6; }
+#lost.show { display: flex; }
+#lost-tag { max-width: 26rem; line-height: 1.45; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
+#lost button {
+	font: inherit; font-weight: 800; color: #2a1830; background: #ffd36e;
+	border: 0; border-radius: 999px; padding: 0.6rem 1.4rem; cursor: pointer;
+	box-shadow: 0 4px 0 #b8380c;
+}
+#lost button:hover { background: #ffe29a; }
+#lost button:active { transform: translateY(3px); box-shadow: 0 1px 0 #b8380c; }
+#turn { display: none; z-index: 5; }
+#turn.show { display: flex; }
+#turn svg { width: 92px; height: 92px; }
+#turn-title { font-weight: 800; font-size: 1.35rem; color: #ffd36e; }
+#turn-tag { color: #b8a8b8; font-size: 0.95rem; max-width: 18rem; }
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+
+	</head>
+	<body>
+		<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+		<noscript>Graveyard Smash 3D needs JavaScript.</noscript>
+		<div id="status" class="cover">
+			<img id="status-splash" class="show-image--false fullsize--true use-filter--true" src="index.png" alt="">
+			<div id="status-title">Graveyard Smash<small>3D</small></div>
+			<div id="status-tag">Digging the monsters out of their plots&hellip;</div>
+			<div id="status-bar"><div id="status-fill"></div></div>
+			<div id="status-notice"></div>
+		</div>
+		<div id="lost" class="cover" role="alert">
+			<div class="status-title">Graveyard Smash<small>3D</small></div>
+			<div id="lost-tag">The lights went out in the graveyard: this browser stopped the game's graphics (its WebGL context was lost).</div>
+			<button type="button" onclick="location.reload()">Dig them back up</button>
+		</div>
+		<div id="turn" class="cover" aria-live="polite">
+			<svg viewBox="0 0 92 92" aria-hidden="true">
+				<rect x="28" y="10" width="36" height="62" rx="7" fill="none" stroke="#b8a8b8" stroke-width="4" stroke-dasharray="6 5"/>
+				<rect x="12" y="34" width="62" height="36" rx="7" fill="#2a1830" stroke="#ffd36e" stroke-width="4"/>
+				<circle cx="66" cy="52" r="3" fill="#ffd36e"/>
+				<path d="M70 18 a22 22 0 0 1 10 22" fill="none" stroke="#e8e4c9" stroke-width="4" stroke-linecap="round"/>
+				<path d="M74 40 l6 1 l2 -6" fill="none" stroke="#e8e4c9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+			</svg>
+			<div id="turn-title">Turn your phone sideways</div>
+			<div id="turn-tag">The stick goes under your left thumb, attack, special, jump and shield under your right.</div>
+		</div>
+
+		<script>
+// Audio unlock. Browsers keep audio suspended until a user gesture, and iOS
+// Safari only lets it start *inside* one. The engine creates its AudioContext
+// (GodotAudio.ctx) out of reach, so the constructor is wrapped here, before the
+// engine loads, and every instance is recorded. Each tap / click / key then,
+// synchronously in the handler:
+//   * on iOS, sets navigator.audioSession to "playback" (iOS 17+) and plays a
+//     silent looping <audio>, so the ring/silent switch does not mute the game;
+//   * resumes every context that is not running.
+// window.gsAudioUnlocked turns true once a gesture has run them all;
+// core/audio.gd polls it and restarts the requested music then, so the title's
+// first input ("Press any button" / a tap) is the moment the title music starts.
+// The listeners stay: iOS suspends ("interrupted") on calls and app switches.
+(function () {
+	const AC = window.AudioContext || window.webkitAudioContext;
+	const ctxs = [];
+	const ua = navigator.userAgent;
+	const IOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+	let gestured = false;
+	let tag = null;
+	window.gsAudioUnlocked = false;
+	window.gsAudioContexts = ctxs;  // read by the page checks (tools/web_audio_check.mjs)
+	function update() {
+		const live = ctxs.filter((c) => c.state !== 'closed');
+		if (gestured && live.length > 0 && live.every((c) => c.state === 'running')) {
+			window.gsAudioUnlocked = true;
+		}
+	}
+	if (AC) {
+		const Wrapped = function (...args) {
+			const c = new AC(...args);
+			ctxs.push(c);
+			c.addEventListener('statechange', update);
+			return c;
+		};
+		Wrapped.prototype = AC.prototype;
+		window.AudioContext = Wrapped;
+		if (window.webkitAudioContext) { window.webkitAudioContext = Wrapped; }
+	}
+	// 0.5 s of 8-bit silence (a WAV built here: no extra file to fetch)
+	function silentWav() {
+		const rate = 8000, n = 4000, v = new DataView(new ArrayBuffer(44 + n));
+		const str = (o, t) => { for (let i = 0; i < t.length; i++) { v.setUint8(o + i, t.charCodeAt(i)); } };
+		str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE'); str(12, 'fmt ');
+		v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+		v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+		str(36, 'data'); v.setUint32(40, n, true);
+		for (let i = 0; i < n; i++) { v.setUint8(44 + i, 128); }
+		return URL.createObjectURL(new Blob([v.buffer], { type: 'audio/wav' }));
+	}
+	function playbackSession() {
+		if (!IOS || document.hidden) { return; }
+		try { if (navigator.audioSession) { navigator.audioSession.type = 'playback'; } } catch (e) { /* older iOS */ }
+		if (!tag) {
+			tag = document.createElement('audio');
+			tag.setAttribute('playsinline', '');
+			tag.setAttribute('x-webkit-airplay', 'deny');
+			tag.disableRemotePlayback = true;
+			tag.loop = true;
+			tag.preload = 'auto';
+			tag.src = silentWav();
+		}
+		if (tag.paused) { const p = tag.play(); if (p) { p.catch(() => {}); } }
+	}
+	function unlock(ev) {
+		if (ev && ev.isTrusted === false) { return; }
+		playbackSession();
+		if (ctxs.length > 0) { gestured = true; }
+		ctxs.forEach((c) => {
+			if (c.state !== 'running' && c.state !== 'closed') {
+				const p = c.resume();
+				if (p) { p.then(update, () => {}); }
+			}
+		});
+		update();
+	}
+	['pointerdown', 'pointerup', 'mousedown', 'touchstart', 'touchend', 'click', 'keydown'].forEach((e) =>
+		window.addEventListener(e, unlock, { capture: true, passive: true }));
+	// the silent loop would show in the lock screen's player: pause it while hidden
+	document.addEventListener('visibilitychange', () => {
+		if (document.hidden) {
+			if (tag && !tag.paused) { tag.pause(); }
+		} else if (gestured) {
+			playbackSession();
+			ctxs.forEach((c) => { if (c.state !== 'running' && c.state !== 'closed') { c.resume().catch(() => {}); } });
+		}
+	});
+}());
+
+// Phones and tablets get the phone pack, the turn-sideways card and a capped
+// pixel ratio (a 3x screen would draw the 3D layer, a full-screen 4x MSAA
+// viewport, at 9x the pixels for little gain). ?pack=mobile / ?pack=desktop forces a pack (testing).
+const GS_QUERY = new URLSearchParams(location.search);
+const GS_PHONE = (function () {
+	const forced = GS_QUERY.get('pack');
+	if (forced === 'mobile' || forced === 'desktop') { return forced === 'mobile'; }
+	const ua = navigator.userAgent;
+	return /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+		|| window.matchMedia('(pointer: coarse) and (max-height: 1100px)').matches;
+}());
+(function () {
+	const real = window.devicePixelRatio || 1;
+	const cap = GS_PHONE ? 1.5 : 2;
+	if (real > cap) {
+		try { Object.defineProperty(window, 'devicePixelRatio', { get: () => cap, configurable: true }); } catch (e) { /* keep the real one */ }
+	}
+}());
+		</script>
+		<script src="index.js"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":80421616,"index.wasm":37686550},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const GS_PACK = GS_PHONE ? 'index.mobile.pck' : 'index.pck';  // phones never download the desktop pack
+if (GODOT_CONFIG.fileSizes && '50674336' !== 'GS_' + 'MOBILE_PCK_SIZE') {
+	GODOT_CONFIG.fileSizes['index.mobile.pck'] = Number('50674336');
+}
+// The game reads its own dev flags from the page URL (ui/app.gd WEB_FLAGS, e.g.
+// ?match=jack,vlad&cpu=0,5&stage=graveyard; core/arcade.gd's ?quality=phone),
+// and ?room=CODE is an invite (addons/online_mp reads it itself). The page only
+// passes ?verbose=1 on to the engine (the stand-in check reads its log).
+const GS_ARGS = GS_QUERY.get('verbose') ? ['--verbose'] : [];
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const overlay = document.getElementById('status');
+	const bar = document.getElementById('status-bar');
+	const fill = document.getElementById('status-fill');
+	const notice = document.getElementById('status-notice');
+	const turn = document.getElementById('turn');
+	let initializing = true;
+	let mode = '';
+
+	function setMode(m) {
+		if (mode === m || !initializing) { return; }
+		if (m === 'hidden') {
+			// fade out over the game's first frame (the same key art), then go
+			initializing = false;
+			overlay.classList.add('leaving');
+			setTimeout(() => overlay.remove(), 600);
+			return;
+		}
+		overlay.style.visibility = 'visible';
+		bar.style.display = m === 'progress' ? 'block' : 'none';
+		notice.style.display = m === 'notice' ? 'block' : 'none';
+		mode = m;
+	}
+
+	function fail(err) {
+		console.error(err);
+		const text = err instanceof Error ? err.message : (typeof err === 'string' ? err : 'The monsters would not get up.');
+		notice.textContent = '';
+		text.split('\n').forEach((line) => { notice.appendChild(document.createTextNode(line)); notice.appendChild(document.createElement('br')); });
+		setMode('notice');
+		initializing = false;
+	}
+
+	// A landscape game: on a phone held upright, ask for it sideways.
+	function checkTurn() {
+		turn.classList.toggle('show', GS_PHONE && window.innerHeight > window.innerWidth * 1.05);
+	}
+	window.addEventListener('resize', checkTurn);
+	window.addEventListener('orientationchange', checkTurn);
+	checkTurn();
+
+	// The browser can drop the WebGL context (GPU reset, memory pressure; the
+	// engine cannot rebuild it): show the key art and a reload, never a black page.
+	document.getElementById('canvas').addEventListener('webglcontextlost', () => {
+		document.getElementById('lost').classList.add('show');
+	});
+
+	// Keep keyboard focus on the game after taps on the page.
+	document.addEventListener('pointerdown', () => {
+		const c = document.getElementById('canvas');
+		if (c && document.activeElement !== c) { c.focus(); }
+	}, true);
+	// The page itself never zooms (pinch, double-tap) or scrolls.
+	document.addEventListener('gesturestart', (e) => e.preventDefault());
+	document.addEventListener('dblclick', (e) => e.preventDefault());
+	document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) { e.preventDefault(); } }, { passive: false });
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		fail('This browser is missing features the game needs:\n' + missing.join('\n') + '\nTry a current Chrome, Edge, Firefox or Safari.');
+		return;
+	}
+	setMode('progress');
+	engine.startGame({
+		mainPack: GS_PACK,
+		args: GS_ARGS,
+		onProgress: function (current, total) {
+			if (current > 0 && total > 0) {
+				fill.classList.remove('indeterminate');
+				fill.style.width = Math.min(100, (100 * current) / total).toFixed(1) + '%';
+			} else {
+				fill.classList.add('indeterminate');
+			}
+		},
+	}).then(() => {
+		// the engine runs; core/arcade.gd calls gsGameShown once the title has drawn
+		// (a dev ?screen= / ?match= start never does: hand over after a moment)
+		bar.style.display = 'none';
+		setTimeout(() => setMode('hidden'), 4000);
+	}, fail);
+	window.gsGameShown = () => setMode('hidden');
+}());
+		</script>
+	</body>
+</html>
+
